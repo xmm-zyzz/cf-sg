@@ -33,7 +33,7 @@ jobs:
             const sourceFilePath = path.join(process.cwd(), sourceFileName);
 
             if (!fs.existsSync(sourceFilePath)) {
-              console.error(\`错误：在路径 '\${sourceFilePath}' 未找到源文件。请确保您的仓库根目录有名为 'snippets' 的文件。\`);
+              console.error(`错误：在路径 '$\{sourceFilePath\}' 未找到源文件。请确保您的仓库根目录有名为 'snippets' 的文件。`);
               process.exit(1);
             }
 
@@ -44,20 +44,22 @@ jobs:
               process.exit(1);
             }
 
-            // --- 更安全的混淆配置 ---
+            // --- 最终平衡型混淆配置 ---
             const obfuscationOptions = {
-                compact: true, // 压缩代码
-                controlFlowFlattening: false, // 【已禁用】这是导致错误的主要选项之一
-                deadCodeInjection: false, // 【已禁用】这是导致错误的主要选项之一
-                stringArray: true, // 启用字符串数组
-                stringArrayEncoding: ['base64'], // 对字符串数组进行 Base64 编码
-                stringArrayThreshold: 0.75, // 字符串数组编码的阈值
-                renameGlobals: false, // 【已禁用】这是导致错误的主要选项之一
-                identifierNamesGenerator: 'mangled', // 标识符名称生成器
-                numbersToExpressions: true, // 将数字转换为表达式
-                splitStrings: true, // 分割字符串
-                splitStringsChunkLength: 10, // 分割字符串的块长度
-                transformObjectKeys: false, // 【已禁用】这是导致错误的主要选项之一
+                compact: true,
+                controlFlowFlattening: true,
+                controlFlowFlatteningThreshold: 0.75,
+                deadCodeInjection: true,
+                deadCodeInjectionThreshold: 0.4,
+                stringArray: true,
+                stringArrayEncoding: ['base64'],
+                stringArrayThreshold: 0.75,
+                renameGlobals: true,
+                identifierNamesGenerator: 'mangled',
+                numbersToExpressions: true,
+                splitStrings: true,
+                splitStringsChunkLength: 10,
+                transformObjectKeys: true,
                 selfDefending: false,
                 debugProtection: false
             };
@@ -65,7 +67,7 @@ jobs:
             const obfuscatedCode = JavaScriptObfuscator.obfuscate(originalCode, obfuscationOptions).getObfuscatedCode();
             
             fs.writeFileSync(path.join(process.cwd(), outputFileName), obfuscatedCode, 'utf8');
-            console.log(\`成功将 '\${sourceFileName}' 混淆并保存至 '\${outputFileName}'。\`);
+            console.log(`成功将 '$\{sourceFileName\}' 混淆并保存至 '$\{outputFileName\}'。`);
           "
 
       - name: Commit and push the obfuscated file
