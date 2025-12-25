@@ -47,9 +47,9 @@ jobs:
             // --- 最终平衡型混淆配置 ---
             const obfuscationOptions = {
                 compact: true,
-                controlFlowFlattening: false,
+                controlFlowFlattening: true,
                 controlFlowFlatteningThreshold: 0.75,
-                deadCodeInjection: false,
+                deadCodeInjection: true,
                 deadCodeInjectionThreshold: 0.4,
                 stringArray: true,
                 stringArrayEncoding: ['base64'],
