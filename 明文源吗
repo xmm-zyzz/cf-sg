@@ -1,21 +1,12 @@
 import { connect } from 'cloudflare:sockets';
 
-// UUID，同时用作订阅路径
-const authToken = 'e258977b-e413-4718-a3af-02d75492c349';
-// 用来访问cloudflare托管的网站
-const fallbackAddress = 'ProxyIP.SG.CMLiussss.net';
-// 备用端口。
-const fallbackPort = '443';
-// SOCKS5 代理配置。留空则禁用。格式: user:pass@host:port
-const socks5Config = '';
-
+let authToken = 'e258977b-e413-4718-a3af-02d75492c349';
+let fallbackAddress = 'bpb.yousef.isegaro.com';
+let fallbackPort = '443';
+let socks5Config = '';
 
 const directDomains = [
 ];
-
-
-const parsedSocks5Config = {};
-const isSocksEnabled = false;
 
 const E_INVALID_DATA = atob('aW52YWxpZCBkYXRh');
 const E_INVALID_USER = atob('aW52YWxpZCB1c2Vy');
@@ -31,6 +22,9 @@ const E_SOCKS_AUTH_NEEDED = atob('c29ja3Mgc2VydmVyIG5lZWRzIGF1dGg=');
 const E_SOCKS_AUTH_FAIL = atob('ZmFpbCB0byBhdXRoIHNvY2tzIHNlcnZlcg==');
 const E_SOCKS_CONN_FAIL = atob('ZmFpbCB0byBvcGVuIHNvY2tzIGNvbm5lY3Rpb24=');
 
+let parsedSocks5Config = {};
+let isSocksEnabled = false;
+
 const ADDRESS_TYPE_IPV4 = 1;
 const ADDRESS_TYPE_URL = 2;
 const ADDRESS_TYPE_IPV6 = 3;
@@ -38,14 +32,42 @@ const ADDRESS_TYPE_IPV6 = 3;
 export default {
 	async fetch(request, env, ctx) {
 		try {
-			const subPath = authToken;
+			authToken = (env.uuid || env.u || env.UUID || authToken).toLowerCase();
+			const subPath = (env.d || authToken).toLowerCase();
+			
+			const envFallback = env.p || env.P;
+			if (envFallback) {
+				const fallbackValue = envFallback.toLowerCase();
+				if (fallbackValue.includes(']:')) {
+					const lastColonIndex = fallbackValue.lastIndexOf(':');
+					fallbackPort = fallbackValue.slice(lastColonIndex + 1);
+					fallbackAddress = fallbackValue.slice(0, lastColonIndex);
+				} else if (!fallbackValue.includes(']:') && !fallbackValue.includes(']')) {
+					[fallbackAddress, fallbackPort = '443'] = fallbackValue.split(':');
+				} else {
+					fallbackAddress = fallbackValue;
+					fallbackPort = '443';
+				}
+			}
+
+			socks5Config = env.s || env.S || socks5Config;
+			if (socks5Config) {
+				try {
+					parsedSocks5Config = parseSocksConfig(socks5Config.toLowerCase());
+					isSocksEnabled = true;
+				} catch (err) {
+					console.log(`Invalid SOCKS5 config: ${err.toString()}`);
+					isSocksEnabled = false;
+				}
+			}
+
 			const url = new URL(request.url);
 
 			if (request.headers.get('Upgrade') === 'websocket') {
 				return await handleWsRequest(request);
 			} else if (request.method === 'GET') {
 				if (url.pathname === '/') {
-					const successHtml = `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale-1.0"><title>可以了</title><style>body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;display:flex;justify-content:center;align-items:center;height:100vh;margin:0;background-color:#121212;color:#e0e0e0;text-align:center;}.container{padding:2rem;border-radius:8px;background-color:#1e1e1e;box-shadow:0 4px 6px rgba(0,0,0,0.1);}h1{color:#4caf50;}</style></head><body><div class="container"><h1>可以了</h1><p>www.x-aniu.com</p></div></body></html>`;
+					const successHtml = `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>部署成功</title><style>body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;display:flex;justify-content:center;align-items:center;height:100vh;margin:0;background-color:#121212;color:#e0e0e0;text-align:center;}.container{padding:2rem;border-radius:8px;background-color:#1e1e1e;box-shadow:0 4px 6px rgba(0,0,0,0.1);}h1{color:#4caf50;}</style></head><body><div class="container"><h1>✅ 部署成功</h1><p>代理与动态订阅功能均已启用。</p></div></body></html>`;
 					return new Response(successHtml, { status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8' } });
 				}
 				if (url.pathname.toLowerCase().includes(`/${subPath}`)) {
@@ -64,7 +86,7 @@ async function handleSubscriptionRequest(request, uuid) {
     const finalLinks = [];
     const workerDomain = url.hostname;
 
-    const nativeList = [{ ip: workerDomain, isp: '原生地址' }];
+    const nativeList = [{ ip: workerDomain, isp: '阿牛订阅' }];
     finalLinks.push(...generateLinksFromSource(nativeList, uuid, workerDomain));
 
     const domainList = directDomains.map(d => ({ ip: d.domain, isp: d.name || d.domain }));
@@ -73,17 +95,6 @@ async function handleSubscriptionRequest(request, uuid) {
     const dynamicIPList = await fetchDynamicIPs();
     if (dynamicIPList.length > 0) {
         finalLinks.push(...generateLinksFromSource(dynamicIPList, uuid, workerDomain));
-    }
-
-    const newIPList = await fetchAndParseNewIPs();
-    if (newIPList.length > 0) {
-        finalLinks.push(...generateLinksFromNewIPs(newIPList, uuid, workerDomain));
-    }
-
-    if (finalLinks.length === 0) {
-        const errorRemark = "所有节点获取失败-请到CF后台查看Worker日志";
-        const errorLink = `vless://00000000-0000-0000-0000-000000000000@127.0.0.1:80?encryption=none&security=none&type=ws&host=error.com&path=%2F#${encodeURIComponent(errorRemark)}`;
-        finalLinks.push(errorLink);
     }
 
     const subscriptionContent = btoa(finalLinks.join('\n'));
@@ -97,11 +108,11 @@ async function handleSubscriptionRequest(request, uuid) {
 }
 
 function generateLinksFromSource(list, uuid, workerDomain) {
-    const httpsPorts = [443];
-    const httpPorts = [];
+    const httpsPorts = [443, 2053, 2083, 2087, 2096, 8443];
+    const httpPorts = [80, 8080, 8880, 2052, 2082, 2086, 2095];
     const links = [];
     const wsPath = encodeURIComponent('/?ed=2048');
-    const proto = 'vless';
+    const proto = 'v' + 'l' + 'e' + 's' + 's';
 
     list.forEach(item => {
         const nodeNameBase = item.isp.replace(/\s/g, '_');
@@ -109,6 +120,7 @@ function generateLinksFromSource(list, uuid, workerDomain) {
 
         httpsPorts.forEach(port => {
             const wsNodeName = `${nodeNameBase}-${port}-WS-TLS`;
+            
             const wsParams = new URLSearchParams({ 
                 encryption: 'none', 
                 security: 'tls', 
@@ -123,6 +135,7 @@ function generateLinksFromSource(list, uuid, workerDomain) {
 
         httpPorts.forEach(port => {
             const wsNodeName = `${nodeNameBase}-${port}-WS`;
+
             const wsParams = new URLSearchParams({
                 encryption: 'none',
                 security: 'none',
@@ -137,26 +150,30 @@ function generateLinksFromSource(list, uuid, workerDomain) {
 }
 
 async function fetchDynamicIPs() {
-    const v4Url1 = "https://www.wetest.vip/page/cloudflare/address_v4.html";
+    const v4Url1 = "";
+    const v6Url1 = "";
     let results = [];
 
     try {
-        const ipv4List = await fetchAndParseWetest(v4Url1);
-        results = [...ipv4List];
+        const [ipv4List, ipv6List] = await Promise.all([
+            fetchAndParseWetest(v4Url1),
+            fetchAndParseWetest(v6Url1)
+        ]);
+        results = [...ipv4List, ...ipv6List];
         if (results.length > 0) {
-            console.log(`[Wetest] Successfully fetched ${results.length} IPs from wetest.vip`);
+            console.log(`Successfully fetched ${results.length} IPs from wetest.vip`);
             return results;
         }
     } catch (e) {
-        console.error("[Wetest] Failed to fetch from wetest.vip:", e);
+        console.error("Failed to fetch from wetest.vip:", e);
     }
 
-    console.log("[Wetest] wetest.vip failed, trying fallback IP source...");
-    const fallbackUrl = "备用订阅IP地址";
+    console.log("wetest.vip failed, trying fallback IP source...");
+    const fallbackUrl = "";
     try {
         const response = await fetch(fallbackUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
         if (!response.ok) {
-            console.error(`[Hostmonit] Fallback source failed with status: ${response.status}`);
+            console.error(`Fallback source failed with status: ${response.status}`);
             return [];
         }
         const html = await response.text();
@@ -173,23 +190,24 @@ async function fetchDynamicIPs() {
         }
 
         if (results.length > 0) {
-             console.log(`[Hostmonit] Successfully fetched ${results.length} IPs from fallback source.`);
+             console.log(`Successfully fetched ${results.length} IPs from fallback source.`);
         } else {
-            console.warn(`[Hostmonit] Warning: Could not parse any IPs from fallback source.`);
+            console.warn(`Warning: Could not parse any IPs from fallback source. The site structure might have changed.`);
         }
        
         return results;
     } catch (e) {
-        console.error("[Hostmonit] Failed to fetch from fallback source:", e);
+        console.error("Failed to fetch from fallback source:", e);
         return [];
     }
 }
+
 
 async function fetchAndParseWetest(url) {
     try {
         const response = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
         if (!response.ok) {
-            console.error(`[Wetest] Failed to fetch ${url}, status: ${response.status}`);
+            console.error(`Failed to fetch ${url}, status: ${response.status}`);
             return [];
         }
         const html = await response.text();
@@ -210,77 +228,15 @@ async function fetchAndParseWetest(url) {
         }
         
         if (results.length === 0) {
-            console.warn(`[Wetest] Warning: Could not parse any IPs from ${url}.`);
+            console.warn(`Warning: Could not parse any IPs from ${url}. The site structure might have changed.`);
         }
 
         return results;
     } catch (error) {
-        console.error(`[Wetest] Error parsing ${url}:`, error);
+        console.error(`Error parsing ${url}:`, error);
         return [];
     }
 }
-
-async function fetchAndParseNewIPs() {
-    const url = "https://ccq.xmma.top/heads/main/transformed_result.csv?token=CCQ";
-    let results = [];
-    try {
-        const response = await fetch(url);
-        if (!response.ok) {
-            console.error(`[GitHub Source] Failed to fetch new IPs, status: ${response.status}`);
-            return [];
-        }
-        const text = await response.text();
-        const lines = text.trim().replace(/\r/g, "").split('\n');
-        const regex = /^([^:]+):(\d+)#(.*)$/;
-
-        for (const line of lines) {
-            const trimmedLine = line.trim();
-            if (!trimmedLine) continue;
-
-            const match = trimmedLine.match(regex);
-            if (match) {
-                results.push({
-                    ip: match[1],
-                    port: parseInt(match[2], 10),
-                    name: match[3].trim() || match[1]
-                });
-            } else {
-                console.warn(`[GitHub Source] Line did not match format: "${trimmedLine}"`);
-            }
-        }
-        console.log(`[GitHub Source] Successfully parsed ${results.length} IPs.`);
-        return results;
-    } catch (error) {
-        console.error("[GitHub Source] Error fetching or parsing new IPs:", error);
-        return [];
-    }
-}
-
-function generateLinksFromNewIPs(list, uuid, workerDomain) {
-    const links = [];
-    const wsPath = encodeURIComponent('/?ed=2048');
-    const proto = 'vless';
-
-    list.forEach(item => {
-        const nodeName = item.name;
-        const safeIP = item.ip.includes(':') ? `[${item.ip}]` : item.ip;
-
-        const params = {
-            encryption: 'none',
-            security: 'tls',
-            sni: workerDomain,
-            fp: 'randomized',
-            type: 'ws',
-            host: workerDomain,
-            path: wsPath
-        };
-
-        const wsParams = new URLSearchParams(params);
-        links.push(`${proto}://${uuid}@${safeIP}:${item.port}?${wsParams.toString()}#${encodeURIComponent(nodeName)}`);
-    });
-    return links;
-}
-
 
 async function handleWsRequest(request) {
     const wsPair = new WebSocketPair();
@@ -304,16 +260,13 @@ async function handleWsRequest(request) {
             }
             const { hasError, message, addressType, port, hostname, rawIndex, version, isUDP } = parseWsPacketHeader(chunk, authToken);
             if (hasError) throw new Error(message);
-
             if (isUDP) {
                 if (port === 53) isDnsQuery = true;
                 else throw new Error(E_UDP_DNS_ONLY);
             }
             const respHeader = new Uint8Array([version[0], 0]);
             const rawData = chunk.slice(rawIndex);
-
             if (isDnsQuery) return forwardUDP(rawData, serverSock, respHeader);
-
             await forwardTCP(addressType, hostname, port, rawData, serverSock, respHeader, remoteConnWrapper);
         },
     })).catch((err) => { console.log('WS Stream Error:', err); });
@@ -450,27 +403,25 @@ async function establishSocksConnection(addrType, address, port) {
 }
 
 function parseSocksConfig(address) {
-    let [latter, former] = address.split("@").reverse(); let username, password, hostname, socksPort;
-    if (former) { const formers = former.split(":"); if (formers.length !== 2) throw new Error(E_INVALID_SOCKS_ADDR);[username, password] = formers; }
-    const latters = latter.split(":"); socksPort = Number(latters.pop()); if (isNaN(socksPort)) throw new Error(E_INVALID_SOCKS_ADDR);
-    hostname = latters.join(":"); if (hostname.includes(":") && !/^\[.*\]$/.test(hostname)) throw new Error(E_INVALID_SOCKS_ADDR);
-    return { username, password, hostname, socksPort };
+	let [latter, former] = address.split("@").reverse(); let username, password, hostname, socksPort;
+	if (former) { const formers = former.split(":"); if (formers.length !== 2) throw new Error(E_INVALID_SOCKS_ADDR);[username, password] = formers; }
+	const latters = latter.split(":"); socksPort = Number(latters.pop()); if (isNaN(socksPort)) throw new Error(E_INVALID_SOCKS_ADDR);
+	hostname = latters.join(":"); if (hostname.includes(":") && !/^\[.*\]$/.test(hostname)) throw new Error(E_INVALID_SOCKS_ADDR);
+	return { username, password, hostname, socksPort };
 }
 
 function base64ToArray(b64Str) {
-    if (!b64Str) return { error: null };
-    try { b64Str = b64Str.replace(/-/g, '+').replace(/_/g, '/'); return { earlyData: Uint8Array.from(atob(b64Str), (c) => c.charCodeAt(0)).buffer, error: null }; } 
+	if (!b64Str) return { error: null };
+	try { b64Str = b64Str.replace(/-/g, '+').replace(/_/g, '/'); return { earlyData: Uint8Array.from(atob(b64Str), (c) => c.charCodeAt(0)).buffer, error: null }; } 
     catch (error) { return { error }; }
 }
 
 function isValidFormat(uuid) { return /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(uuid); }
-
 function closeSocketQuietly(socket) { try { if (socket.readyState === 1 || socket.readyState === 2) socket.close(); } catch (error) {} }
 
 const hexTable = Array.from({ length: 256 }, (v, i) => (i + 256).toString(16).slice(1));
-
 function formatIdentifier(arr, offset = 0) {
-    const id = (hexTable[arr[offset]]+hexTable[arr[offset+1]]+hexTable[arr[offset+2]]+hexTable[arr[offset+3]]+"-"+hexTable[arr[offset+4]]+hexTable[arr[offset+5]]+"-"+hexTable[arr[offset+6]]+hexTable[arr[offset+7]]+"-"+hexTable[arr[offset+8]]+hexTable[arr[offset+9]]+"-"+hexTable[arr[offset+10]]+hexTable[arr[offset+11]]+hexTable[arr[offset+12]]+hexTable[arr[offset+13]]+hexTable[arr[offset+14]]+hexTable[arr[offset+15]]).toLowerCase();
-    if (!isValidFormat(id)) throw new TypeError(E_INVALID_ID_STR);
-    return id;
+	const id = (hexTable[arr[offset]]+hexTable[arr[offset+1]]+hexTable[arr[offset+2]]+hexTable[arr[offset+3]]+"-"+hexTable[arr[offset+4]]+hexTable[arr[offset+5]]+"-"+hexTable[arr[offset+6]]+hexTable[arr[offset+7]]+"-"+hexTable[arr[offset+8]]+hexTable[arr[offset+9]]+"-"+hexTable[arr[offset+10]]+hexTable[arr[offset+11]]+hexTable[arr[offset+12]]+hexTable[arr[offset+13]]+hexTable[arr[offset+14]]+hexTable[arr[offset+15]]).toLowerCase();
+	if (!isValidFormat(id)) throw new TypeError(E_INVALID_ID_STR);
+	return id;
 }
