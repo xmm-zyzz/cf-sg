@@ -74,7 +74,7 @@ jobs:
               renamePropertiesMode: 'safe',
               ignoreImports: false,
               target: 'browser',
-              numbersToExpressions: false,
+              numbersToExpressions: true,
               simplify: false,
               splitStrings: true,
               splitStringsChunkLength: 1,
