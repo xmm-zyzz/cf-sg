@@ -54,7 +54,7 @@ jobs:
               deadCodeInjection: false,
               stringArray: true,
               stringArrayEncoding: ['base64'],
-              stringArrayThreshold: 1.0,
+              stringArrayThreshold: 0.5,
               stringArrayRotate: true,
               stringArrayShuffle: true,
               stringArrayWrappersCount: 2,
