@@ -1,6 +1,5 @@
 import { connect } from 'cloudflare:sockets';
 
-// --- 硬编码配置 ---
 // UUID，同时用作订阅路径。
 const authToken = 'e258977b-e413-4718-a3af-02d75492c349';
 // 用来访问cloudflare托管的网站
