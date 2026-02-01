@@ -5,6 +5,7 @@ let fallbackAddress = 'ProxyIP.JP.CMLiussss.net';
 let fallbackPort = '443';
 let socks5Config = '';
 
+
 const directDomains = [
 ];
 
