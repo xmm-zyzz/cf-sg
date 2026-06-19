@@ -1,4 +1,4 @@
-name: Generate and Obfuscate Worker Script
+name: Generate and Obfuscate Worker Script (CF Safe)
 
 on:
   workflow_dispatch:
@@ -6,7 +6,7 @@ on:
     branches:
       - '**'
     paths:
-      - '明文源吗'
+      - '明文源吗/**'
 
 jobs:
   build-and-obfuscate:
@@ -16,110 +16,113 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Node.js
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '18'
 
       - name: Install dependencies
         run: |
-          npm install javascript-obfuscator terser
+          npm install javascript-obfuscator
 
+      # =========================
+      # 1. 生成 CF 安全构建脚本
+      # =========================
       - name: Build obfuscation script
         run: |
-          cat > obfuscate.js << 'EOF'
-          const JavaScriptObfuscator = require('javascript-obfuscator');
+          cat > build.js << 'EOF'
           const fs = require('fs');
           const path = require('path');
+          const JavaScriptObfuscator = require('javascript-obfuscator');
 
-          const sourceFileName = '明文源吗';
-          const outputFileName = '少年你相信光吗';
-          const sourceFilePath = path.join(process.cwd(), sourceFileName);
+          const inputFile = '明文源吗';
+          const outputFile = '少年你相信光吗';
 
-          if (!fs.existsSync(sourceFilePath)) {
-              console.error('错误：未找到源文件 ' + sourceFilePath);
-              process.exit(1);
+          const sourcePath = path.join(process.cwd(), inputFile);
+
+          if (!fs.existsSync(sourcePath)) {
+            console.error('❌ 未找到源文件:', sourcePath);
+            process.exit(1);
           }
 
-          const originalCode = fs.readFileSync(sourceFilePath, 'utf8');
+          const code = fs.readFileSync(sourcePath, 'utf8');
 
-          if (!originalCode || originalCode.trim().length === 0) {
-              console.error('错误：源文件为空');
-              process.exit(1);
+          if (!code.trim()) {
+            console.error('❌ 源文件为空');
+            process.exit(1);
           }
 
-          // ===== 工业级混淆配置 =====
-          const obfuscationOptions = {
-              compact: true,
+          // =========================
+          // ✔ Cloudflare Safe 混淆配置
+          // =========================
+          const options = {
+            compact: true,
 
-              controlFlowFlattening: true,
-              controlFlowFlatteningThreshold: 0.75,
+            // ❌ CF 禁用危险项（避免 global scope 报错）
+            controlFlowFlattening: false,
+            deadCodeInjection: false,
+            debugProtection: false,
 
-              deadCodeInjection: true,
-              deadCodeInjectionThreshold: 0.35,
+            // ✔ 字符串保护（核心）
+            stringArray: true,
+            stringArrayEncoding: ['rc4'],
+            stringArrayThreshold: 0.85,
 
-              stringArray: true,
-              stringArrayEncoding: ['rc4'],
-              stringArrayThreshold: 0.9,
+            stringArrayShuffle: true,
+            stringArrayRotate: true,
 
-              stringArrayShuffle: true,
-              stringArrayRotate: true,
+            stringArrayWrappersCount: 2,
+            stringArrayWrappersChainedCalls: false,
 
-              stringArrayWrappersCount: 3,
-              stringArrayWrappersChainedCalls: true,
-              stringArrayWrappersParametersMaxCount: 4,
+            // ✔ 标识符混淆
+            identifierNamesGenerator: 'mangled-shuffled',
+            renameGlobals: false,
 
-              renameGlobals: true,
-              identifierNamesGenerator: 'mangled-shuffled',
+            // ✔ 结构混淆（安全级）
+            splitStrings: true,
+            splitStringsChunkLength: 2,
 
-              renameProperties: false,
+            transformObjectKeys: true,
 
-              splitStrings: true,
-              splitStringsChunkLength: 2,
+            numbersToExpressions: true,
+            simplify: true,
 
-              transformObjectKeys: true,
+            unicodeEscapeSequence: true,
 
-              selfDefending: true,
-              debugProtection: true,
-              debugProtectionInterval: 4000,
+            disableConsoleOutput: true,
 
-              disableConsoleOutput: true,
-
-              target: 'browser',
-
-              numbersToExpressions: true,
-              simplify: true,
-
-              ignoreImports: true,
-              unicodeEscapeSequence: true
+            target: 'browser',
+            ignoreImports: true
           };
 
-          const obfuscatedCode =
-              JavaScriptObfuscator
-                  .obfuscate(originalCode, obfuscationOptions)
-                  .getObfuscatedCode();
+          const output = JavaScriptObfuscator
+            .obfuscate(code, options)
+            .getObfuscatedCode();
 
           fs.writeFileSync(
-              path.join(process.cwd(), outputFileName),
-              obfuscatedCode,
-              'utf8'
+            path.join(process.cwd(), outputFile),
+            output,
+            'utf8'
           );
 
-          console.log('混淆完成：' + outputFileName);
+          console.log('✔ 混淆完成:', outputFile);
           EOF
 
-          node obfuscate.js
+          node build.js
 
-      - name: Commit and push result
+      # =========================
+      # 2. 提交结果
+      # =========================
+      - name: Commit and push
         run: |
-          git config --global user.name 'GitHub Actions Bot'
-          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
           git add '少年你相信光吗'
 
           if git diff --staged --quiet; then
-            echo "No changes to commit"
+            echo "No changes"
           else
-            git commit -m "deploy: obfuscated build"
+            git commit -m "deploy: cloudflare safe obfuscation"
             git push
           fi
